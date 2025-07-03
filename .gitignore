@@ -1,0 +1,6 @@
+# Downloaded video files
+*.mp4
+*.avi
+
+# Default download directory
+downloads/
