@@ -1,10 +1,11 @@
-
 import sys
 import os
+import subprocess
+import re # yt-dlp 출력 파싱을 위해 추가
+
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QLineEdit,
                              QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QProgressBar)
 from PyQt5.QtCore import QThread, pyqtSignal
-from pytube import YouTube
 
 class DownloaderThread(QThread):
     """
@@ -22,23 +23,55 @@ class DownloaderThread(QThread):
 
     def run(self):
         try:
-            yt = YouTube(self.url, on_progress_callback=self.progress_callback)
-            yt.bypass_age_gate()
-            stream = yt.streams.get_highest_resolution()
-            
-            self.finished.emit(f"'{yt.title}' 다운로드를 시작합니다...")
-            
-            stream.download(output_path=self.save_path)
-            
-            self.finished.emit(f"다운로드 완료! 저장 경로: {os.path.abspath(self.save_path)}")
+            # yt-dlp 명령어 구성
+            # -o: 출력 파일 경로 및 이름 형식 지정
+            # --progress: 진행 상황을 stderr로 출력
+            # --no-warnings: 경고 메시지 출력 안 함
+            # --restrict-filenames: 파일 이름 제한 (안전한 파일 이름)
+            # --no-playlist: 플레이리스트 다운로드 방지 (단일 영상만)
+            command = [
+                "yt-dlp",
+                "--progress",
+                "--no-warnings",
+                "--restrict-filenames",
+                "--no-playlist",
+                "-o", os.path.join(self.save_path, "%(title)s.%(ext)s"),
+                self.url
+            ]
+
+            self.finished.emit(f"다운로드를 시작합니다: {self.url}")
+
+            # subprocess를 사용하여 yt-dlp 실행
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True, # 텍스트 모드로 설정
+                bufsize=1, # 라인 버퍼링
+                universal_newlines=True # 유니코드 처리
+            )
+
+            # stderr에서 진행 상황 읽기
+            for line in iter(process.stderr.readline, ''):
+                if "%" in line:
+                    match = re.search(r"(\d+\.\d+)%", line)
+                    if match:
+                        percentage = float(match.group(1))
+                        self.progress.emit(int(percentage))
+                # print(f"yt-dlp output: {line.strip()}") # 디버깅용
+
+            process.wait() # 프로세스 종료 대기
+
+            if process.returncode == 0:
+                self.finished.emit(f"다운로드 완료! 저장 경로: {os.path.abspath(self.save_path)}")
+            else:
+                error_output = process.stderr.read()
+                self.error.emit(f"다운로드 실패: {error_output}")
+
+        except FileNotFoundError:
+            self.error.emit("오류: 'yt-dlp'를 찾을 수 없습니다. yt-dlp가 시스템 PATH에 추가되었는지 확인하세요.")
         except Exception as e:
             self.error.emit(f"오류 발생: {e}")
-
-    def progress_callback(self, stream, chunk, bytes_remaining):
-        total_size = stream.filesize
-        bytes_downloaded = total_size - bytes_remaining
-        percentage = (bytes_downloaded / total_size) * 100
-        self.progress.emit(int(percentage))
 
 
 class YoutubeDownloader(QWidget):
@@ -47,7 +80,8 @@ class YoutubeDownloader(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle('YouTube Downloader')
+        self.setWindowTitle('YouTube Downloader (yt-dlp)') # 제목 변경
+        self.setGeometry(300, 300, 500, 200) # 창 크기 조정
 
         # 레이아웃 설정
         vbox = QVBoxLayout()
