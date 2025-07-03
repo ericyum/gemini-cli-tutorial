@@ -1,10 +1,11 @@
 import sys
 import os
 import json
+import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTextEdit, QAction, QFileDialog, 
                              QMessageBox, QTabWidget, QWidget, QVBoxLayout,
-                             QInputDialog, QLineEdit, QPushButton, QHBoxLayout, QLabel)
-from PyQt5.QtGui import QIcon, QTextCursor, QTextDocument, QTextDocument
+                             QInputDialog, QLineEdit, QPushButton, QHBoxLayout, QLabel, QDialog, QDialogButtonBox, QComboBox, QSpinBox)
+from PyQt5.QtGui import QIcon, QTextCursor, QTextDocument, QFont
 from PyQt5.QtCore import Qt, QSettings
 
 # --- Find Dialog ---
@@ -63,6 +64,138 @@ class FindDialog(QWidget):
         else:
             super().keyPressEvent(event)
 
+# --- Replace Dialog ---
+class ReplaceDialog(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("Replace")
+        self.setWindowFlags(Qt.Tool)
+        self.layout = QVBoxLayout()
+
+        self.find_layout = QHBoxLayout()
+        self.find_input = QLineEdit()
+        self.find_layout.addWidget(QLabel("Find what:"))
+        self.find_layout.addWidget(self.find_input)
+        self.layout.addLayout(self.find_layout)
+
+        self.replace_layout = QHBoxLayout()
+        self.replace_input = QLineEdit()
+        self.replace_layout.addWidget(QLabel("Replace with:"))
+        self.replace_layout.addWidget(self.replace_input)
+        self.layout.addLayout(self.replace_layout)
+
+        self.button_layout = QHBoxLayout()
+        self.find_button = QPushButton("Find")
+        self.replace_button = QPushButton("Replace")
+        self.replace_all_button = QPushButton("Replace All")
+
+        self.find_button.clicked.connect(self.find_text)
+        self.replace_button.clicked.connect(self.replace_text)
+        self.replace_all_button.clicked.connect(self.replace_all_text)
+
+        self.button_layout.addWidget(self.find_button)
+        self.button_layout.addWidget(self.replace_button)
+        self.button_layout.addWidget(self.replace_all_button)
+        self.layout.addLayout(self.button_layout)
+
+        self.setLayout(self.layout)
+
+    def find_text(self):
+        text = self.find_input.text()
+        if text and self.parent:
+            self.parent.find_text(text)
+
+    def replace_text(self):
+        find_text = self.find_input.text()
+        replace_text = self.replace_input.text()
+        if find_text and self.parent:
+            self.parent.replace_text(find_text, replace_text)
+
+    def replace_all_text(self):
+        find_text = self.find_input.text()
+        replace_text = self.replace_input.text()
+        if find_text and self.parent:
+            self.parent.replace_all_text(find_text, replace_text)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
+# --- Font Dialog ---
+class FontDialog(QDialog):
+    def __init__(self, current_font, parent=None):
+        super().__init__(parent)
+        self.current_font = current_font
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("Font")
+        self.layout = QVBoxLayout()
+
+        # Font Family
+        font_family_layout = QHBoxLayout()
+        font_family_layout.addWidget(QLabel("Font:"))
+        self.font_family_combo = QComboBox()
+        self.font_family_combo.addItems(['맑은 고딕', '바탕', '굴림'])
+        self.font_family_combo.setCurrentText(self.current_font.family())
+        font_family_layout.addWidget(self.font_family_combo)
+        self.layout.addLayout(font_family_layout)
+
+        # Font Style
+        font_style_layout = QHBoxLayout()
+        font_style_layout.addWidget(QLabel("Style:"))
+        self.font_style_combo = QComboBox()
+        self.font_style_combo.addItems(['Semilight', 'Regular', 'Bold'])
+        
+        # Set current style
+        if self.current_font.weight() == QFont.Light:
+            self.font_style_combo.setCurrentText('Semilight')
+        elif self.current_font.weight() == QFont.Normal:
+            self.font_style_combo.setCurrentText('Regular')
+        elif self.current_font.weight() == QFont.Bold:
+            self.font_style_combo.setCurrentText('Bold')
+        
+        font_style_layout.addWidget(self.font_style_combo)
+        self.layout.addLayout(font_style_layout)
+
+        # Font Size
+        font_size_layout = QHBoxLayout()
+        font_size_layout.addWidget(QLabel("Size:"))
+        self.font_size_spinbox = QSpinBox()
+        self.font_size_spinbox.setRange(1, 99)
+        self.font_size_spinbox.setValue(self.current_font.pointSize())
+        font_size_layout.addWidget(self.font_size_spinbox)
+        self.layout.addLayout(font_size_layout)
+
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        self.layout.addWidget(button_box)
+
+        self.setLayout(self.layout)
+
+    def get_selected_font(self):
+        font = QFont()
+        font.setFamily(self.font_family_combo.currentText())
+        
+        style = self.font_style_combo.currentText()
+        if style == 'Semilight':
+            font.setWeight(QFont.Light)
+        elif style == 'Regular':
+            font.setWeight(QFont.Normal)
+        elif style == 'Bold':
+            font.setWeight(QFont.Bold)
+            
+        font.setPointSize(self.font_size_spinbox.value())
+        return font
+
 
 # --- Main Notepad Window ---
 class Notepad(QMainWindow):
@@ -70,12 +203,12 @@ class Notepad(QMainWindow):
         super().__init__()
         self.last_search = ""
         self.find_dialog = None
+        self.replace_dialog = None
         self.is_closing_window = False # Flag to differentiate between close window and exit
         self.initUI()
         if restore:
-            self.restore_session()
-        elif self.tab_widget.count() == 0:
-            self.new_tab()
+            if not self.restore_session():
+                self.new_tab()
 
     def initUI(self):
         self.tab_widget = QTabWidget()
@@ -161,6 +294,13 @@ class Notepad(QMainWindow):
         self.find_action = self.edit_menu.addAction('Find...', self.show_find_dialog, 'Ctrl+F')
         self.find_next_action = self.edit_menu.addAction('Find Next', self.find_next, 'F3')
         self.find_prev_action = self.edit_menu.addAction('Find Previous', self.find_prev, 'Shift+F3')
+        self.replace_action = self.edit_menu.addAction('Replace...', self.show_replace_dialog, 'Ctrl+H')
+        self.edit_menu.addSeparator()
+        self.go_to_action = self.edit_menu.addAction('Go To...', self.go_to_line, 'Ctrl+G')
+        self.select_all_action = self.edit_menu.addAction('Select All', self.select_all, 'Ctrl+A')
+        self.time_date_action = self.edit_menu.addAction('Time/Date', self.insert_time_date, 'F5')
+        self.edit_menu.addSeparator()
+        self.font_action = self.edit_menu.addAction('Font...', self.show_font_dialog)
         
         self.update_edit_menu() # Initial state
 
@@ -169,6 +309,8 @@ class Notepad(QMainWindow):
         view_menu.addAction('Zoom In', self.zoom_in, 'Ctrl++')
         view_menu.addAction('Zoom Out', self.zoom_out, 'Ctrl+-')
         view_menu.addAction('Default Zoom', self.default_zoom, 'Ctrl+0')
+        view_menu.addSeparator()
+        view_menu.addAction('Restore Default Zoom', self.default_zoom) # Duplicate of Default Zoom, as requested
 
     def update_edit_menu(self):
         editor = self.current_editor()
@@ -177,6 +319,10 @@ class Notepad(QMainWindow):
         self.copy_action.setEnabled(has_selection)
         self.delete_action.setEnabled(has_selection)
         self.paste_action.setEnabled(QApplication.clipboard().mimeData().hasText())
+        self.go_to_action.setEnabled(bool(editor))
+        self.select_all_action.setEnabled(bool(editor))
+        self.time_date_action.setEnabled(bool(editor))
+        self.font_action.setEnabled(bool(editor))
 
     def current_editor(self):
         return self.tab_widget.currentWidget()
@@ -317,6 +463,35 @@ class Notepad(QMainWindow):
     def delete(self):
         if self.current_editor(): self.current_editor().textCursor().removeSelectedText()
 
+    def go_to_line(self):
+        editor = self.current_editor()
+        if not editor: return
+
+        line_number, ok = QInputDialog.getInt(self, "Go To Line", "Line number:",
+                                              editor.textCursor().blockNumber() + 1, 1, editor.document().blockCount(), 1)
+        if ok:
+            cursor = QTextCursor(editor.document().findBlockByLineNumber(line_number - 1))
+            editor.setTextCursor(cursor)
+
+    def select_all(self):
+        editor = self.current_editor()
+        if editor: editor.selectAll()
+
+    def insert_time_date(self):
+        editor = self.current_editor()
+        if editor:
+            current_time_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            editor.insertPlainText(current_time_date)
+
+    def show_font_dialog(self):
+        editor = self.current_editor()
+        if not editor: return
+
+        font_dialog = FontDialog(editor.font(), self)
+        if font_dialog.exec_() == QDialog.Accepted:
+            selected_font = font_dialog.get_selected_font()
+            editor.setFont(selected_font)
+
     # --- View Actions ---
     def zoom_in(self):
         if self.current_editor(): self.current_editor().zoomIn(2)
@@ -341,18 +516,35 @@ class Notepad(QMainWindow):
         if not editor: return
 
         flags = QTextDocument.FindFlags()
+        flags |= QTextDocument.FindCaseSensitively # Make it case-sensitive
+
         if backward:
             flags |= QTextDocument.FindBackward
 
+        # Store original cursor position for wrap-around logic
+        original_cursor = editor.textCursor()
+        
+        # If it's the first search (not find_next), start from the beginning
         if not find_next:
-            # Move cursor to beginning to start search from the top
             cursor = editor.textCursor()
             cursor.movePosition(QTextCursor.Start)
             editor.setTextCursor(cursor)
 
         found = editor.find(text, flags)
+
         if not found:
-            QMessageBox.information(self, "Find", f"Cannot find '{text}'")
+            # If not found, try wrapping around
+            # Move cursor to beginning/end based on search direction
+            cursor = editor.textCursor()
+            cursor.movePosition(QTextCursor.Start if not backward else QTextCursor.End)
+            editor.setTextCursor(cursor)
+            
+            found = editor.find(text, flags)
+            
+            if found:
+                QMessageBox.information(self, "Find", f"Reached {'end' if not backward else 'beginning'} of document. Continuing from {'beginning' if not backward else 'end'}.")
+            else:
+                QMessageBox.information(self, "Find", f"Cannot find '{text}'")
 
     def find_next(self):
         if self.last_search:
@@ -361,6 +553,47 @@ class Notepad(QMainWindow):
     def find_prev(self):
         if self.last_search:
             self.find_text(self.last_search, find_next=True, backward=True)
+
+    # --- Replace Functionality ---
+    def show_replace_dialog(self):
+        if not self.replace_dialog:
+            self.replace_dialog = ReplaceDialog(self)
+        self.replace_dialog.show()
+        self.replace_dialog.activateWindow()
+
+    def replace_text(self, find_text, replace_text):
+        editor = self.current_editor()
+        if not editor: return
+
+        cursor = editor.textCursor()
+        if cursor.hasSelection() and cursor.selectedText() == find_text:
+            cursor.insertText(replace_text)
+            editor.setTextCursor(cursor)
+        else:
+            self.find_text(find_text) # Find the next occurrence
+
+    def replace_all_text(self, find_text, replace_text):
+        editor = self.current_editor()
+        if not editor: return
+
+        editor.blockSignals(True) # Prevent signals during mass replacement
+        cursor = editor.textCursor()
+        
+        # Move to the beginning of the document
+        cursor.movePosition(QTextCursor.Start)
+        editor.setTextCursor(cursor)
+
+        replacements = 0
+        flags = QTextDocument.FindFlags()
+        flags |= QTextDocument.FindCaseSensitively # Ensure case-sensitive search
+        
+        while editor.find(find_text, flags):
+            cursor = editor.textCursor()
+            cursor.insertText(replace_text)
+            replacements += 1
+        
+        editor.blockSignals(False)
+        QMessageBox.information(self, "Replace All", f"Replaced {replacements} occurrences.")
 
     # --- Recent Files ---
     def get_recent_files(self):
@@ -425,22 +658,21 @@ class Notepad(QMainWindow):
 
         session_data_json = settings.value("session")
         if not session_data_json:
-            self.new_tab()
-            return
+            return False
             
         try:
             session_data = json.loads(session_data_json)
             if not session_data: # If session was empty
-                self.new_tab()
-                return
+                return False
 
             for item in session_data:
                 if item.get("file_path"):
                     self.open_file(item["file_path"])
                 elif "content" in item:
                     self.new_tab(content=item["content"])
+            return True
         except (json.JSONDecodeError, TypeError):
-            self.new_tab() # Start fresh if session data is corrupt
+            return False
 
     def closeEvent(self, event):
         if self.is_closing_window:
